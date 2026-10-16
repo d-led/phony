@@ -8,9 +8,10 @@ import (
 	"github.com/d-led/phony/virtualtime"
 )
 
-// The property of the example actor: it ticks as often as it was asked to and no
-// more, and the clock the program owns moves by exactly that many ticks — three
-// seconds for three ticks of a second, whatever the number is.
+// The property of the example actor: the ticker ticks as often as it was asked to
+// and no more, and the program that owns the clock moves it by exactly the time
+// those ticks take — three seconds for three ticks of a second, whatever the number
+// is. The ticker itself never moves a clock; this test does.
 func TestTheTickerTicksAsOftenAsItWasAskedTo(t *testing.T) {
 	property := func(raw int8) bool {
 		want := ticksFrom(raw)
@@ -22,7 +23,7 @@ func TestTheTickerTicksAsOftenAsItWasAskedTo(t *testing.T) {
 
 		start := clock.Now()
 		ticker.TickTimesAsync(want)
-		ticker.WaitForTicksAtLeast(want, time.Duration(want)*tickEvery+tickEvery)
+		clock.Advance(time.Duration(want) * tickEvery)
 
 		return ticker.GetTicks() == want && clock.Now().Sub(start) == time.Duration(want)*tickEvery
 	}

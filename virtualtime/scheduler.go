@@ -10,6 +10,11 @@ import (
 // Timer is what an actor needs in order to be testable: somewhere to ask for
 // "call this later". An actor that takes a Timer instead of reaching for the
 // time package is testable in virtual time and runs on real time unchanged.
+//
+// A Timer cannot move time. The wall clock moves by itself, and a Clock is moved by
+// whoever owns it: the test says how much time has passed, with Advance, AdvanceTo
+// or Run, and the actor that was given the clock never does. An actor that could
+// move its own test's clock would be testing itself.
 type Timer interface {
 	// After calls f once a duration has passed, and answers a cancel function
 	// that reports whether the notification was still waiting.
@@ -21,12 +26,6 @@ type Timer interface {
 
 	// Now answers the time the Timer is keeping.
 	Now() time.Time
-
-	// WaitFor lets up to d of this Timer's time pass, until f answers true, and
-	// answers whether it did. It is how a test that would have waited says the
-	// time has passed instead: waiting is waiting on the wall clock, and a step
-	// over the time on a Clock, so the same test body runs on either.
-	WaitFor(d time.Duration, f func() bool) bool
 }
 
 // Clock is a Timer whose time belongs to a test, and the scheduler that runs the
@@ -84,11 +83,10 @@ func (c *Clock) After(d time.Duration, f func()) func() bool {
 }
 
 // WaitFor lets up to d of the clock's time pass, timer by timer, until f answers
-// true, and answers whether it did.
-//
-// The timers that fall due on the way fire in order and the actors of the test
-// run, and the clock stops as soon as f is satisfied, so it never moves past what
-// was waited for.
+// true, and answers whether it did. It is the clock owner's convenience for a test
+// that does not know how much time is enough: it moves the clock the way Advance
+// does, and stops as soon as f is satisfied, so it never moves past what was waited
+// for.
 func (c *Clock) WaitFor(d time.Duration, f func() bool) bool {
 	deadline := c.now.Add(d)
 
