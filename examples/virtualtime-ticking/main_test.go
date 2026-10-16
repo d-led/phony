@@ -13,19 +13,19 @@ func TestTheWallClockTicksInThreeSeconds(t *testing.T) {
 
 	ticks, cost := onTheWallClock()
 
-	if ticks != three {
-		t.Fatalf("ticked %d times, want %d", ticks, three)
+	if ticks != 3 {
+		t.Fatalf("ticked %d times, want 3", ticks)
 	}
-	if cost < three*tickEvery {
-		t.Fatalf("the wall clock cost %v, less than the %v of ticks it was asked for", cost, three*tickEvery)
+	if cost < 3*tickEvery {
+		t.Fatalf("the wall clock cost %v, less than the %v of ticks it was asked for", cost, 3*tickEvery)
 	}
 }
 
 func TestTheSameTicksCostNothingOnAClockTheProgramOwns(t *testing.T) {
 	ticks, cost := onTheClockTheProgramOwns()
 
-	if ticks != three {
-		t.Fatalf("ticked %d times, want %d", ticks, three)
+	if ticks != 3 {
+		t.Fatalf("ticked %d times, want 3", ticks)
 	}
 	if cost > tickEvery {
 		t.Fatalf("the ticks took %v of real time: the clock this program owns does not wait for them", cost)

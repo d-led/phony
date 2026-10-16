@@ -16,10 +16,8 @@ import (
 	"github.com/d-led/phony/virtualtime"
 )
 
-const (
-	tickEvery = time.Second
-	three     = 3
-)
+// tickEvery is how often the ticker ticks; the runs below tick three times.
+const tickEvery = time.Second
 
 // Ticker ticks once per tickEvery until the ticking it was asked for is over.
 type Ticker struct {
@@ -110,8 +108,8 @@ func timeIt(run func() int) (int, time.Duration) {
 func onTheWallClock() (int, time.Duration) {
 	return timeIt(func() int {
 		ticker := NewTicker(RealTime())
-		ticker.TickTimesAsync(three)
-		ticker.WaitForTicksAtLeast(three, 10*time.Second)
+		ticker.TickTimesAsync(3)
+		ticker.WaitForTicksAtLeast(3, 10*time.Second)
 
 		return ticker.GetTicks()
 	})
@@ -126,8 +124,8 @@ func onTheClockTheProgramOwns() (int, time.Duration) {
 		defer clock.Reset()
 
 		ticker := NewTicker(clock)
-		ticker.TickTimesAsync(three)
-		ticker.WaitForTicksAtLeast(three, 10*time.Second)
+		ticker.TickTimesAsync(3)
+		ticker.WaitForTicksAtLeast(3, 10*time.Second)
 
 		return ticker.GetTicks()
 	})
