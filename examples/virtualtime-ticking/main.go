@@ -16,10 +16,9 @@ import (
 	"github.com/d-led/phony/virtualtime"
 )
 
-const (
-	interval = 100 * time.Millisecond
-	threeSec = 3 * time.Second
-)
+// interval is how often the ticker ticks; the two runs below tick for three
+// seconds, which is thirty of them.
+const interval = 100 * time.Millisecond
 
 // Ticker ticks every interval until the duration it was asked for has passed.
 type Ticker struct {
@@ -79,7 +78,7 @@ func onTheWallClock() run {
 	ticker := NewTicker(virtualtime.NewReal(), interval)
 
 	start := time.Now()
-	ticks := ticker.TickFor(threeSec)
+	ticks := ticker.TickFor(3 * time.Second)
 	count := <-ticks // here the three seconds pass
 
 	return run{ticks: count, elapsed: time.Since(start)}
@@ -94,8 +93,8 @@ func onTheClockTheTestOwns() run {
 	ticker := NewTicker(clock, interval)
 
 	start := time.Now()
-	ticks := ticker.TickFor(threeSec)
-	clock.Advance(threeSec)
+	ticks := ticker.TickFor(3 * time.Second)
+	clock.Advance(3 * time.Second)
 
 	return run{ticks: <-ticks, elapsed: time.Since(start)}
 }

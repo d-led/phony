@@ -15,7 +15,6 @@ import (
 
 const (
 	interval = 100 * time.Millisecond
-	threeSec = 3 * time.Second
 	want     = 30
 )
 
@@ -75,14 +74,14 @@ func TestTickingOnTheWallClockTakesThreeSeconds(t *testing.T) {
 	ticker := NewTicker(virtualtime.NewReal(), interval)
 
 	start := time.Now()
-	ticks := ticker.TickFor(threeSec)
+	ticks := ticker.TickFor(3 * time.Second)
 	count := <-ticks // here the three seconds pass
 
 	if count != want {
 		t.Fatalf("ticked %d times in three seconds, want %d", count, want)
 	}
-	if elapsed := time.Since(start); elapsed < threeSec {
-		t.Fatalf("the wall clock answered in %v, less than the %v it ticks for", elapsed, threeSec)
+	if elapsed := time.Since(start); elapsed < 3*time.Second {
+		t.Fatalf("the wall clock answered in %v, less than the %v it ticks for", elapsed, 3*time.Second)
 	}
 
 	t.Logf("wall clock: %d ticks in %v", count, time.Since(start))
@@ -95,16 +94,16 @@ func TestTickingOnTheVirtualClockTakesNoTime(t *testing.T) {
 	ticker := NewTicker(clock, interval)
 
 	start := time.Now()
-	ticks := ticker.TickFor(threeSec)
-	clock.Advance(threeSec)
+	ticks := ticker.TickFor(3 * time.Second)
+	clock.Advance(3 * time.Second)
 
 	count := <-ticks // the count is there: the test decided the time had passed
 
 	if count != want {
 		t.Fatalf("ticked %d times in three seconds, want %d", count, want)
 	}
-	if elapsed := time.Since(start); elapsed > threeSec {
-		t.Fatalf("advancing %v took %v of real time", threeSec, elapsed)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("advancing %v took %v of real time", 3*time.Second, elapsed)
 	}
 
 	t.Logf("virtual time: %d ticks in %v", count, time.Since(start))
@@ -130,8 +129,8 @@ func TestNothingIsLeftRunningWhenTheTickingIsOver(t *testing.T) {
 
 	ticker := NewTicker(clock, interval)
 
-	ticker.TickFor(threeSec)
-	clock.Advance(threeSec)
+	ticker.TickFor(3 * time.Second)
+	clock.Advance(3 * time.Second)
 
 	if timers, ready := clock.Pending(); timers != 0 || ready != 0 {
 		t.Fatalf("pending: %d timers, %d ready; want the ticking to be over and nothing running", timers, ready)
@@ -149,8 +148,8 @@ func Example() {
 	ticker := NewTicker(clock, interval)
 
 	start := clock.Now()
-	ticks := ticker.TickFor(threeSec)
-	clock.Advance(threeSec)
+	ticks := ticker.TickFor(3 * time.Second)
+	clock.Advance(3 * time.Second)
 
 	fmt.Println("ticks:", <-ticks)
 	fmt.Println("the clock moved by", clock.Now().Sub(start))

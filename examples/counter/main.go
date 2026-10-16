@@ -1,3 +1,6 @@
+// Command counter is the upstream library's example: a counter actor and a printer
+// actor, driven from main, which shows the Inbox embedded in a struct and messages
+// sent from one actor to another.
 package main
 
 import (

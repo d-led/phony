@@ -11,11 +11,11 @@ import (
 // wall-clock Timer is tested to the same contract as the clock: it calls back
 // when it is due, it reports a cancel, and it answers the time it is keeping.
 func TestTheRealTimerCallsBack(t *testing.T) {
-	real := virtualtime.NewReal()
-	start := real.Now()
+	wall := virtualtime.NewReal()
+	start := wall.Now()
 
 	fired := make(chan time.Time, 1)
-	real.After(5*time.Millisecond, func() { fired <- real.Now() })
+	wall.After(5*time.Millisecond, func() { fired <- wall.Now() })
 
 	select {
 	case at := <-fired:
@@ -28,10 +28,10 @@ func TestTheRealTimerCallsBack(t *testing.T) {
 }
 
 func TestTheRealTimerReportsACancel(t *testing.T) {
-	real := virtualtime.NewReal()
+	wall := virtualtime.NewReal()
 
 	cancelled := false
-	cancel := real.After(time.Hour, func() { cancelled = true })
+	cancel := wall.After(time.Hour, func() { cancelled = true })
 
 	if !cancel() {
 		t.Error("cancelling a waiting real timer answered false")
@@ -45,10 +45,10 @@ func TestTheRealTimerReportsACancel(t *testing.T) {
 }
 
 func TestTheRealRepeatingTimerRepeats(t *testing.T) {
-	real := virtualtime.NewReal()
+	wall := virtualtime.NewReal()
 
 	ticks := make(chan struct{}, 3)
-	cancel := real.Every(time.Millisecond, func() {
+	cancel := wall.Every(time.Millisecond, func() {
 		select {
 		case ticks <- struct{}{}:
 		default:
@@ -68,4 +68,12 @@ func TestTheRealRepeatingTimerRepeats(t *testing.T) {
 	if cancel() {
 		t.Error("cancelling a cancelled real timer answered true")
 	}
+}
+
+// The same contract as the clock's: a repeating timer needs somewhere to start
+// from, and the wall clock says so the same way.
+func TestTheRealRepeatingTimerNeedsAPositiveInterval(t *testing.T) {
+	wall := virtualtime.NewReal()
+
+	mustPanic(t, func() { wall.Every(0, func() {}) })
 }
