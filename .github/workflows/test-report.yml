@@ -22,8 +22,8 @@ jobs:
     steps:
       - uses: dorny/test-reporter@v3.0.0
         with:
-          artifact: /test-results-(.*)/
-          name: 'Tests ($1)'
+          artifact: test-results
+          name: 'Go tests'
           path: 'go-test.json'
           reporter: golang-json
           use-actions-summary: 'true'

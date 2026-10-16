@@ -15,26 +15,15 @@ concurrency:
 
 jobs:
   tests:
-    name: Tests (${{ matrix.label }})
+    name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # The floor go.mod declares, and whatever is current.
-          - go: '1.19.x'
-            slug: go1.19
-            label: Go 1.19
-          - go: 'stable'
-            slug: go-stable
-            label: Go stable
     steps:
       - uses: actions/checkout@v7.0.1
 
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version: ${{ matrix.go }}
+          go-version: 'stable'
           # The library has no dependencies, and the example module replaces this
           # one with the working copy, so there is nothing to cache.
           cache: false
@@ -70,13 +59,33 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: test-results-${{ matrix.slug }}
+          name: test-results
           path: |
             junit.xml
             go-test.json
             coverage.out
           if-no-files-found: warn
           retention-days: 14
+
+  floor:
+    # The oldest toolchain go.mod promises, tested with nothing but the standard
+    # library: the report tooling in the job above needs a newer Go than this one.
+    name: Tests (Go 1.19, the floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: '1.19.x'
+          cache: false
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Tests
+        run: go test -count=1 -race ./...
 
   example:
     name: Example module
