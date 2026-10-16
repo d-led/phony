@@ -4,24 +4,24 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/d-led/phony)](https://goreportcard.com/report/github.com/d-led/phony)
 [![GoDoc](https://pkg.go.dev/badge/github.com/d-led/phony.svg)](https://pkg.go.dev/github.com/d-led/phony)
 
-Phony is a [Pony](https://ponylang.io/)-inspired proof-of-concept implementation of shared-memory actor-model concurrency in the Go programming language. `Actor`s automatically manage goroutines and use asynchronous causal messaging (with backpressure) for communcation. This makes it easy to write programs that are free from deadlocks, goroutine leaks, and many of the `for` loops over `select` statements that show up in boilerplate code. The down side is that the code needs to be written in an asynchronous style, which is not idiomatic to Go, so it can take some getting used to.
+Phony is a [Pony](https://ponylang.io/)-inspired implementation of the actor model in Go: `Actor`s
+manage their own goroutines and pass messages asynchronously, causally and with backpressure — and
+the parts of a concurrent system that wait for time are testable without waiting for it.
 
-This is the `d-led` fork of [Arceliar/phony](https://github.com/Arceliar/phony), which is no
-longer developed. The fork is the same library, with one seam and one package added so that actors
-can be tested without waiting for time (`phony.SwapStarter` and `virtualtime`, below); nothing else
-changed. The module path differs, so the import is:
+This is the `d-led` fork of [Arceliar/phony](https://github.com/Arceliar/phony), which is no longer
+developed: the same library, with one seam and one package added for exactly that
+(`phony.SwapStarter` and `virtualtime`). Nothing else changed, but the module path differs:
 
 ```go
 import "github.com/d-led/phony"
 ```
 
-## Testing actors that wait for time
+## Actors that wait for time are testable in no time
 
-An actor that takes its timers from a `virtualtime.Timer` instead of reaching for the `time`
-package can be tested without waiting for time to pass. `virtualtime.Clock` is a `Timer` whose time
-belongs to the test, and it installs itself as the package's `phony.Starter`, so the actors under
-test run on the test's thread and nothing happens behind the test's back. This is the whole actor,
-the same in both cases:
+A test of a concurrent system becomes slow, flaky or both as soon as time is involved: a
+thirty-second timeout, a retry in a minute, an alarm in a day. Give the actor its timers instead of
+letting it reach for the `time` package, and the test decides that the time has passed. This is the
+whole actor, the same actor in a test and in production:
 
 ```go
 // Ticker ticks every interval until the duration it was asked for has passed.
@@ -36,111 +36,98 @@ func NewTicker(timer virtualtime.Timer, interval time.Duration) *Ticker {
 	return &Ticker{timer: timer, interval: interval}
 }
 
-// TickFor ticks every interval until d has passed.
-func (t *Ticker) TickFor(d time.Duration) {
-	left := int(d / t.interval)
+// TickFor asks the ticker to tick every interval until d has passed, and answers
+// the channel the number of ticks arrives on.
+func (t *Ticker) TickFor(d time.Duration) <-chan int {
+	ticks := make(chan int, 1)
 
-	// Declared first, because the last tick cancels it.
-	var cancel func() bool
-	cancel = t.timer.Every(t.interval, func() {
-		t.Act(nil, func() {
-			if left <= 0 {
-				cancel()
-				return
-			}
-			left--
-			t.ticks++
+	t.Act(nil, func() {
+		left := int(d / t.interval)
+
+		// Declared first, because the last tick cancels it.
+		var cancel func() bool
+		cancel = t.timer.Every(t.interval, func() {
+			t.Act(nil, func() {
+				// The ticker of the wall clock may have one tick in flight after
+				// the last one was counted.
+				if left <= 0 {
+					cancel()
+					return
+				}
+
+				left--
+				t.ticks++
+
+				if left == 0 {
+					cancel()
+					ticks <- t.ticks
+				}
+			})
 		})
 	})
-}
 
-// Ticks is the count, read inside the actor: on the wall clock the actor has a
-// goroutine of its own, so the count is asked of it rather than read from it.
-func (t *Ticker) Ticks() int { return t.ticks }
-```
-
-On the wall clock, the test waits for the ticks, because there is nothing else it can do: thirty
-ticks of a hundred milliseconds are three seconds of somebody's life, and the assertion has to be a
-poll with a deadline.
-
-```go
-func TestTickingOnTheWallClockTakesThreeSeconds(t *testing.T) {
-	ticker := NewTicker(virtualtime.NewReal(), 100*time.Millisecond)
-
-	start := time.Now()
-	phony.Block(ticker, func() { ticker.TickFor(3 * time.Second) })
-
-	// There is nothing to assert yet, so wait for the ticks with a deadline.
-	deadline := time.Now().Add(6 * time.Second)
-	var ticks int
-	for {
-		phony.Block(ticker, func() { ticks = ticker.Ticks() })
-		if ticks >= 30 || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-
-	if ticks != 30 {
-		t.Fatalf("ticked %d times in three seconds, want 30", ticks)
-	}
-	t.Logf("wall clock: %d ticks in %v", ticks, time.Since(start))
+	return ticks
 }
 ```
 
-On a clock the test owns, the same actor, the same thirty ticks and the same three seconds take no
-time, and the assertion is exact: the ticks are already there because the test decided that they
-happened.
+And this is the whole test of it: three seconds that have passed by the time the clock reaches the
+instant, with nothing to wait for and nothing to poll.
 
 ```go
-func TestTickingOnTheVirtualClockTakesNoTime(t *testing.T) {
+func TestTickingTakesNoTime(t *testing.T) {
 	clock := virtualtime.New()
 	defer clock.Reset()
 
 	ticker := NewTicker(clock, 100*time.Millisecond)
 
-	start := time.Now()
-	clock.Block(ticker, func() { ticker.TickFor(3 * time.Second) })
+	ticks := ticker.TickFor(3 * time.Second)
 	clock.Advance(3 * time.Second)
 
-	ticks := 0
-	clock.Block(ticker, func() { ticks = ticker.Ticks() })
-
-	if ticks != 30 {
-		t.Fatalf("ticked %d times in three seconds, want 30", ticks)
+	if count := <-ticks; count != 30 {
+		t.Fatalf("ticked %d times in three seconds, want 30", count)
 	}
-	t.Logf("virtual time: %d ticks in %v", ticks, time.Since(start))
 }
 ```
 
-`go test ./virtualtime/ -run Ticking -v`, on the machine this was written on:
+Nothing in the actor knows which clock it was given: in production the same ticker is
+`NewTicker(virtualtime.NewReal(), 100*time.Millisecond)`, the same call is made, and *then* the
+three seconds really do take three seconds.
+
+## What it costs, and what it saves
+
+Thirty ticks of a hundred milliseconds, the same actor and the same call, on the machine this was
+written on:
 
 ```
---- PASS: TestTickingOnTheWallClockTakesThreeSeconds (3.00s)
-    ticker_test.go:83: wall clock: 30 ticks in 3.001190417s
---- PASS: TestTickingOnTheVirtualClockTakesNoTime (0.00s)
-    ticker_test.go:102: virtual time: 30 ticks in 6.667µs
+wall clock:   30 ticks in 3.001056s
+virtual time: 30 ticks in 11.834µs
+the same 30 ticks, 3.001044166s sooner
 ```
 
-Both tests are in `virtualtime/ticker_test.go`, with the interval, the duration and the count out as
-constants; the wall-clock one skips itself under `go test -short`. The package's `Example` is the
-same actor, so `go doc ./virtualtime` leads with it.
+The comparison is a program and not a mock-up:
+[`examples/virtualtime-ticking`](examples/virtualtime-ticking) (`cd examples/virtualtime-ticking &&
+go run .`). The wall-clock half of it is the test that can do nothing but wait, with a deadline and a
+poll; the virtual half is the test above.
 
-The same thing as a program that depends on this module is in
-[`examples/virtualtime-ticking`](examples/virtualtime-ticking): `cd examples/virtualtime-ticking &&
-go run .` prints, on the same machine:
+## Why the test can be exact instead of patient
 
-```
-wall clock:   30 ticks in 3.001058792s
-virtual time: 30 ticks in 34.417µs
-the same 30 ticks, 3.001024375s sooner
-```
+- **Nothing waits.** A timer does not exist until it is due, and the work belongs to whoever asks
+  the time: `Advance` runs everything that becomes due on the way, on the thread that called it.
+  When `Advance` returns the actors are quiet, so the assertion right after it is exact — no poll, no
+  deadline, no sleep.
+- **Nothing happens behind the test's back.** `virtualtime.New()` installs the clock as the
+  package's `phony.Starter` (`phony.SwapStarter`), which hands an Inbox's work to the clock instead
+  of to a goroutine of its own: no actor of the test runs while the test is not looking, and nothing
+  races.
+- **The order is the order.** Messages are processed in the order they were sent, and timers fire in
+  the order they are due, in the order they were scheduled when several are due at the same instant.
+  The same test run twice does the same thing twice.
+- **A hundred days, now.** `clock.Advance(100 * 24 * time.Hour)` is the line, and `TestWhyWait`
+  takes it; `go test -race ./...` covers both timers.
 
-In production the same actor is given `virtualtime.NewReal()` and nothing about it — or about its
-timers, which do not exist until they are due — changes. `go doc ./virtualtime` describes the
-contract; `go test ./virtualtime/` is the contract: the instant a timer fires, repetition,
-cancellation, the order of timers due on the same instant, time that does not go backwards, and the
-same scenario producing the same trace twice. `go test -race ./...` covers both timers.
+The reference is `go doc github.com/d-led/phony/virtualtime`, and the tests of the package are the
+contract of the clock: the instant a timer fires, repetition, cancellation, same-instant ordering,
+and time that does not go backwards.
 
 ## Benchmarks
 

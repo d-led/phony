@@ -206,8 +206,8 @@ func runScenario(t *testing.T) []string {
 	alarm := &alarm{timer: clock, note: note}
 	ticker := &ticker{timer: clock, note: note}
 
-	clock.Block(alarm, func() { alarm.RingAfter(2 * time.Hour) })
-	clock.Block(ticker, func() { ticker.TickEvery(time.Hour) })
+	alarm.RingAfter(2 * time.Hour)
+	ticker.TickEvery(time.Hour)
 
 	clock.Advance(2 * time.Hour)
 

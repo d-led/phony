@@ -1,11 +1,11 @@
 // Command virtualtime-ticking ticks for three seconds twice: once on the wall
-// clock, where the program really waits, and once on a clock it advances itself,
+// clock, where the program waits for them, and once on a clock it advances itself,
 // where the same three seconds take no time at all.
 //
-//	go run .
+// It is the ticking example of the README and of the virtualtime package, as a
+// program that depends on this module:
 //
-// It is the example of the README's "Testing actors that wait for time", as a
-// dependency: this module imports github.com/d-led/phony.
+//	go run .
 package main
 
 import (
@@ -19,7 +19,6 @@ import (
 const (
 	interval = 100 * time.Millisecond
 	threeSec = 3 * time.Second
-	want     = 30
 )
 
 // Ticker ticks every interval until the duration it was asked for has passed.
@@ -30,62 +29,63 @@ type Ticker struct {
 	ticks    int
 }
 
-// NewTicker answers a ticker whose timers come from timer: a wall-clock Timer
-// here, a virtual clock in the second half of the example.
+// NewTicker answers a ticker whose timers come from timer: the wall clock in
+// production, a virtualtime.Clock in a test.
 func NewTicker(timer virtualtime.Timer, interval time.Duration) *Ticker {
 	return &Ticker{timer: timer, interval: interval}
 }
 
-// TickFor ticks every interval until d has passed: thirty ticks for three
-// seconds of a hundred-millisecond interval.
-func (t *Ticker) TickFor(d time.Duration) {
-	left := int(d / t.interval)
+// TickFor asks the ticker to tick every interval until d has passed, and answers
+// the channel the number of ticks arrives on.
+func (t *Ticker) TickFor(d time.Duration) <-chan int {
+	ticks := make(chan int, 1)
 
-	// Declared first, because the last tick cancels it.
-	var cancel func() bool
-	cancel = t.timer.Every(t.interval, func() {
-		t.Act(nil, func() {
-			if left <= 0 {
-				cancel()
-				return
-			}
-			left--
-			t.ticks++
+	t.Act(nil, func() {
+		left := int(d / t.interval)
+
+		// Declared first, because the last tick cancels it.
+		var cancel func() bool
+		cancel = t.timer.Every(t.interval, func() {
+			t.Act(nil, func() {
+				// The ticker of the wall clock may have one tick in flight after
+				// the last one was counted.
+				if left <= 0 {
+					cancel()
+					return
+				}
+
+				left--
+				t.ticks++
+
+				if left == 0 {
+					cancel()
+					ticks <- t.ticks
+				}
+			})
 		})
 	})
+
+	return ticks
 }
 
-// Ticks is the count, read inside the actor.
-func (t *Ticker) Ticks() int { return t.ticks }
-
-// run answers the number of ticks and what the run cost in wall-clock time.
+// run is a count of ticks and what it cost in wall-clock time.
 type run struct {
 	ticks   int
 	elapsed time.Duration
 }
 
-// onTheWallClock ticks for three seconds of real time. The program has nothing
-// to do but wait, and the count has to be asked of the actor with a deadline.
+// onTheWallClock ticks for three seconds of real time: this one waits for them.
 func onTheWallClock() run {
 	ticker := NewTicker(virtualtime.NewReal(), interval)
 
 	start := time.Now()
-	phony.Block(ticker, func() { ticker.TickFor(threeSec) })
+	ticks := ticker.TickFor(threeSec)
+	count := <-ticks // here the three seconds pass
 
-	deadline := time.Now().Add(2 * threeSec)
-	ticks := 0
-	for {
-		phony.Block(ticker, func() { ticks = ticker.Ticks() })
-		if ticks >= want || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-
-	return run{ticks: ticks, elapsed: time.Since(start)}
+	return run{ticks: count, elapsed: time.Since(start)}
 }
 
-// onTheClockTheTestOwns ticks for the same three seconds, which the program
+// onTheClockTheTestOwns ticks for the same three seconds, which this program
 // decides have passed.
 func onTheClockTheTestOwns() run {
 	clock := virtualtime.New()
@@ -94,13 +94,10 @@ func onTheClockTheTestOwns() run {
 	ticker := NewTicker(clock, interval)
 
 	start := time.Now()
-	clock.Block(ticker, func() { ticker.TickFor(threeSec) })
+	ticks := ticker.TickFor(threeSec)
 	clock.Advance(threeSec)
 
-	ticks := 0
-	clock.Block(ticker, func() { ticks = ticker.Ticks() })
-
-	return run{ticks: ticks, elapsed: time.Since(start)}
+	return run{ticks: <-ticks, elapsed: time.Since(start)}
 }
 
 func main() {

@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/d-led/phony"
 	"github.com/d-led/phony/virtualtime"
 )
 
-// The example itself, in a size a test suite can afford: both clocks tick every
-// ten milliseconds for two hundred milliseconds.
+// The example in a size a test suite can afford: twenty ticks of ten milliseconds,
+// which is two hundred milliseconds either way.
 const (
+	want         = 30 // ticks of the three seconds the example runs
 	testInterval = 10 * time.Millisecond
 	testFor      = 200 * time.Millisecond
 	testWant     = 20
@@ -24,21 +24,11 @@ func TestTheWallClockTicksInRealTime(t *testing.T) {
 	ticker := NewTicker(virtualtime.NewReal(), testInterval)
 
 	start := time.Now()
-	phony.Block(ticker, func() { ticker.TickFor(testFor) })
+	ticks := ticker.TickFor(testFor)
+	count := <-ticks // here the two hundred milliseconds pass
 
-	// There is nothing to assert yet: wait for the ticks, with a deadline.
-	deadline := time.Now().Add(10 * testFor)
-	ticks := 0
-	for {
-		phony.Block(ticker, func() { ticks = ticker.Ticks() })
-		if ticks >= testWant || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-
-	if ticks != testWant {
-		t.Fatalf("ticked %d times in %v, want %d", ticks, testFor, testWant)
+	if count != testWant {
+		t.Fatalf("ticked %d times in %v, want %d", count, testFor, testWant)
 	}
 	if elapsed := time.Since(start); elapsed < testFor {
 		t.Fatalf("the wall clock answered in %v, less than the %v it ticks for", elapsed, testFor)
@@ -52,14 +42,11 @@ func TestTheVirtualClockTicksWithoutWaiting(t *testing.T) {
 	ticker := NewTicker(clock, testInterval)
 
 	start := time.Now()
-	clock.Block(ticker, func() { ticker.TickFor(testFor) })
+	ticks := ticker.TickFor(testFor)
 	clock.Advance(testFor)
 
-	ticks := 0
-	clock.Block(ticker, func() { ticks = ticker.Ticks() })
-
-	if ticks != testWant {
-		t.Fatalf("ticked %d times in %v of virtual time, want %d", ticks, testFor, testWant)
+	if count := <-ticks; count != testWant {
+		t.Fatalf("ticked %d times in %v of virtual time, want %d", count, testFor, testWant)
 	}
 	if elapsed := time.Since(start); elapsed > testFor {
 		t.Fatalf("advancing %v took %v of real time", testFor, elapsed)

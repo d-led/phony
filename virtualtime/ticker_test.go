@@ -9,8 +9,9 @@ import (
 	"github.com/d-led/phony/virtualtime"
 )
 
-// This file is the "show me the code" section of the README: the actor, and the
-// same test run on the wall clock and on a clock the test advances.
+// This file is the ticking example of the README and of the package
+// documentation: one actor and the same three seconds, on the wall clock where it
+// waits and on a clock the test advances, where it does not.
 
 const (
 	interval = 100 * time.Millisecond
@@ -26,35 +27,45 @@ type Ticker struct {
 	ticks    int
 }
 
-// NewTicker answers a ticker whose timers come from timer: a wall-clock Timer in
+// NewTicker answers a ticker whose timers come from timer: the wall clock in
 // production, a virtualtime.Clock in a test.
 func NewTicker(timer virtualtime.Timer, interval time.Duration) *Ticker {
 	return &Ticker{timer: timer, interval: interval}
 }
 
-// TickFor ticks every interval until d has passed: a hundred-millisecond
-// interval for three seconds is thirty ticks, whether the time came from waiting
-// or from a clock the test advanced.
-func (t *Ticker) TickFor(d time.Duration) {
-	left := int(d / t.interval)
+// TickFor asks the ticker to tick every interval until d has passed, and answers
+// the channel the number of ticks arrives on. The channel has room for the number,
+// so the ticker never waits for whoever reads it.
+func (t *Ticker) TickFor(d time.Duration) <-chan int {
+	ticks := make(chan int, 1)
 
-	// Declared first, because the last tick cancels it.
-	var cancel func() bool
-	cancel = t.timer.Every(t.interval, func() {
-		t.Act(nil, func() {
-			if left <= 0 {
-				cancel()
-				return
-			}
-			left--
-			t.ticks++
+	t.Act(nil, func() {
+		left := int(d / t.interval)
+
+		// Declared first, because the last tick cancels it.
+		var cancel func() bool
+		cancel = t.timer.Every(t.interval, func() {
+			t.Act(nil, func() {
+				// The ticker of the wall clock may have one tick in flight after
+				// the last one was counted.
+				if left <= 0 {
+					cancel()
+					return
+				}
+
+				left--
+				t.ticks++
+
+				if left == 0 {
+					cancel()
+					ticks <- t.ticks
+				}
+			})
 		})
 	})
-}
 
-// Ticks is the count, read inside the actor: on the wall clock the actor has a
-// goroutine of its own, so the count is asked of it rather than read from it.
-func (t *Ticker) Ticks() int { return t.ticks }
+	return ticks
+}
 
 func TestTickingOnTheWallClockTakesThreeSeconds(t *testing.T) {
 	if testing.Short() {
@@ -64,23 +75,17 @@ func TestTickingOnTheWallClockTakesThreeSeconds(t *testing.T) {
 	ticker := NewTicker(virtualtime.NewReal(), interval)
 
 	start := time.Now()
-	phony.Block(ticker, func() { ticker.TickFor(threeSec) })
+	ticks := ticker.TickFor(threeSec)
+	count := <-ticks // here the three seconds pass
 
-	// There is nothing to assert yet, so wait for the ticks with a deadline.
-	deadline := time.Now().Add(2 * threeSec)
-	var ticks int
-	for {
-		phony.Block(ticker, func() { ticks = ticker.Ticks() })
-		if ticks >= want || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	if count != want {
+		t.Fatalf("ticked %d times in three seconds, want %d", count, want)
+	}
+	if elapsed := time.Since(start); elapsed < threeSec {
+		t.Fatalf("the wall clock answered in %v, less than the %v it ticks for", elapsed, threeSec)
 	}
 
-	if ticks != want {
-		t.Fatalf("ticked %d times in three seconds, want %d", ticks, want)
-	}
-	t.Logf("wall clock: %d ticks in %v", ticks, time.Since(start))
+	t.Logf("wall clock: %d ticks in %v", count, time.Since(start))
 }
 
 func TestTickingOnTheVirtualClockTakesNoTime(t *testing.T) {
@@ -90,16 +95,19 @@ func TestTickingOnTheVirtualClockTakesNoTime(t *testing.T) {
 	ticker := NewTicker(clock, interval)
 
 	start := time.Now()
-	clock.Block(ticker, func() { ticker.TickFor(threeSec) })
+	ticks := ticker.TickFor(threeSec)
 	clock.Advance(threeSec)
 
-	ticks := 0
-	clock.Block(ticker, func() { ticks = ticker.Ticks() })
+	count := <-ticks // the count is there: the test decided the time had passed
 
-	if ticks != want {
-		t.Fatalf("ticked %d times in three seconds, want %d", ticks, want)
+	if count != want {
+		t.Fatalf("ticked %d times in three seconds, want %d", count, want)
 	}
-	t.Logf("virtual time: %d ticks in %v", ticks, time.Since(start))
+	if elapsed := time.Since(start); elapsed > threeSec {
+		t.Fatalf("advancing %v took %v of real time", threeSec, elapsed)
+	}
+
+	t.Logf("virtual time: %d ticks in %v", count, time.Since(start))
 }
 
 func TestTickingForAHundredDays(t *testing.T) {
@@ -108,34 +116,32 @@ func TestTickingForAHundredDays(t *testing.T) {
 
 	ticker := NewTicker(clock, 24*time.Hour)
 
-	clock.Block(ticker, func() { ticker.TickFor(100 * 24 * time.Hour) })
+	ticks := ticker.TickFor(100 * 24 * time.Hour)
 	clock.Advance(100 * 24 * time.Hour)
 
-	ticks := 0
-	clock.Block(ticker, func() { ticks = ticker.Ticks() })
-
-	if ticks != 100 {
-		t.Fatalf("ticked %d times in a hundred days, want 100", ticks)
+	if count := <-ticks; count != 100 {
+		t.Fatalf("ticked %d times in a hundred days, want 100", count)
 	}
 }
 
-func TestNothingRunsBehindTheTestsBack(t *testing.T) {
+func TestNothingIsLeftRunningWhenTheTickingIsOver(t *testing.T) {
 	clock := virtualtime.New()
 	defer clock.Reset()
 
-	ticker := NewTicker(clock, time.Hour)
+	ticker := NewTicker(clock, interval)
 
-	clock.Block(ticker, func() { ticker.TickFor(time.Hour) })
-	clock.Advance(time.Hour)
+	ticker.TickFor(threeSec)
+	clock.Advance(threeSec)
 
-	if timers, ready := clock.Pending(); timers != 1 || ready != 0 {
-		t.Fatalf("pending: %d timers, %d ready; want the one timer and nothing ready", timers, ready)
+	if timers, ready := clock.Pending(); timers != 0 || ready != 0 {
+		t.Fatalf("pending: %d timers, %d ready; want the ticking to be over and nothing running", timers, ready)
 	}
 }
 
-// Example is the example of the package documentation: thirty ticks of a hundred
-// milliseconds, for three seconds the test decides have passed. The wall-clock
-// half of the same program, which does wait, is examples/virtualtime-ticking.
+// Example is the ticking test of the package documentation: thirty ticks of a
+// hundred milliseconds, for three seconds the test decides have passed. The
+// wall-clock half of the same program, which does take three seconds, is
+// examples/virtualtime-ticking.
 func Example() {
 	clock := virtualtime.New()
 	defer clock.Reset()
@@ -143,13 +149,10 @@ func Example() {
 	ticker := NewTicker(clock, interval)
 
 	start := clock.Now()
-	clock.Block(ticker, func() { ticker.TickFor(threeSec) })
+	ticks := ticker.TickFor(threeSec)
 	clock.Advance(threeSec)
 
-	ticks := 0
-	clock.Block(ticker, func() { ticks = ticker.Ticks() })
-
-	fmt.Println("ticks:", ticks)
+	fmt.Println("ticks:", <-ticks)
 	fmt.Println("the clock moved by", clock.Now().Sub(start))
 
 	// Output:

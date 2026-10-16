@@ -102,26 +102,10 @@ func (c *Clock) Pending() (timers int, ready int) {
 	return waiting, len(c.ready)
 }
 
-// Block sends an actor a message and runs the world until the actor has handled
-// it. It is the counterpart of phony.Block for a test that owns the thread: it
-// blocks nothing, so it either completes or reports that there was nothing left
-// to run.
-func (c *Clock) Block(actor phony.Actor, action func()) {
-	done := false
-
-	actor.Act(nil, action)
-	actor.Act(nil, func() { done = true })
-
-	for !done {
-		if !c.step() {
-			panic("virtualtime: Block could not complete: nothing is ready to run")
-		}
-	}
-}
-
 // Run processes everything that is ready now: the messages of the actors, and
 // every message those messages send, until nothing is left to do. It does not
-// move the clock.
+// move the clock, so it is how a test lets the actors catch up without making
+// time pass.
 func (c *Clock) Run() {
 	for c.step() {
 	}
