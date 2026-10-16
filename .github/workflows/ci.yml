@@ -24,9 +24,8 @@ jobs:
       - uses: actions/setup-go@v7.0.0
         with:
           go-version: 'stable'
-          # The library has no dependencies, and the example module replaces this
-          # one with the working copy, so there is nothing to cache.
-          cache: false
+          # The library has one dependency, the leak check its tests use, so the
+          # module cache is small and worth keeping between runs.
 
       - name: Formatting
         run: |
@@ -106,3 +105,30 @@ jobs:
       - name: The example itself
         working-directory: examples/virtualtime-ticking
         run: go run .
+
+  memory:
+    # The race detector runs in the Tests job. These are the memory checkers, and
+    # the toolchain has them on linux/amd64 only, which is this runner.
+    name: Memory checkers (linux/amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: 'stable'
+
+      - name: The memory sanitizer
+        env:
+          CC: clang
+        run: |
+          go test -count=1 -msan ./...
+          (cd examples/virtualtime-ticking && go test -count=1 -msan ./...)
+
+      - name: The address sanitizer
+        env:
+          CC: clang
+        run: |
+          go test -count=1 -asan ./...
+          (cd examples/virtualtime-ticking && go test -count=1 -asan ./...)

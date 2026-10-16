@@ -77,6 +77,7 @@ gofumpt advisory stage_gofumpt
 lint-strict advisory stage_lint_strict
 security advisory stage_security
 vulnerabilities advisory stage_vulnerabilities
+memory advisory stage_memory
 dupes advisory stage_dupes
 mutation advisory stage_mutation
 benchmarks advisory stage_benchmarks
@@ -212,10 +213,13 @@ stage_vet() {
 }
 
 stage_build() {
-	# Into build/quality-gate/bin, so that building the examples does not drop
-	# their binaries into the working tree.
+	# The example's binary goes into build/quality-gate/bin, so that building it
+	# does not drop it into the working tree. The library has no main packages to
+	# put anywhere, so it is built for the sake of building it.
 	mkdir -p "$OUT/bin"
-	each_module go build -o "$OUT/bin" ./... || return 1
+	(cd "$ROOT" && go build ./...) || return 1
+	(cd "$EXAMPLE" && go build -o "$OUT/bin" ./...) || return 1
+
 	printf 'go build: every package builds\n'
 }
 
@@ -439,6 +443,40 @@ stage_vulnerabilities() {
 
 	each_module "$bin" ./... || return 1
 	printf 'govulncheck: nothing in the code this repository calls\n'
+}
+
+# The race detector is part of the test stage; this is the other half of the memory
+# question, the memory and address sanitizers. The toolchain has them on linux/amd64
+# and nowhere else, so elsewhere the stage says where it is skipping: a sanitizer
+# that cannot run is not a sanitizer that passed.
+stage_memory() {
+	local platform sanitizer
+	platform="$(go env GOOS)/$(go env GOARCH)"
+
+	if [[ "$platform" != linux/amd64 ]]; then
+		skip "the memory checkers" "the toolchain has -msan and -asan on linux/amd64 only, and this is $platform"
+		return 77
+	fi
+
+	if [[ "$(go env CGO_ENABLED)" != 1 ]]; then
+		skip "the memory checkers" "the sanitizers need cgo, which is off here"
+		return 77
+	fi
+
+	if ! command -v clang >/dev/null 2>&1; then
+		skip "the memory checkers" "the sanitizers are clang's, and clang is not here"
+		return 77
+	fi
+
+	# The Go toolchain drives the sanitizers through the C compiler.
+	export CC=clang
+
+	for sanitizer in msan asan; do
+		printf -- '--- go test -%s ---\n' "$sanitizer"
+		each_module go test -count=1 "-$sanitizer" ./... || return 1
+	done
+
+	printf 'the memory sanitizer and the address sanitizer found nothing\n'
 }
 
 # The clone check the metric asks for: jscpd over the Go files of both modules.
