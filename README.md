@@ -25,6 +25,37 @@ ok  	github.com/Arceliar/phony	9.463s
 
 These are microbenchmarks, but they seem to indicate that `Actor` messaging and goroutine+channel operations have comparable cost. I suspect that the difference is negligible in most applications.
 
+## Testing actors that wait for time
+
+An actor that takes its timers from a `virtualtime.Timer` instead of reaching for the `time`
+package can be tested without waiting for time to pass. `virtualtime.Clock` is a `Timer` whose time
+belongs to the test, and it installs a `phony.Starter` that runs the actors on the test's thread, so
+nothing happens behind the test's back:
+
+```go
+clock := virtualtime.New()
+defer clock.Reset()
+
+alarm := NewAlarm(clock) // the actor's timers come from a virtualtime.Timer
+clock.Block(alarm, func() { alarm.RingAfter(100 * 24 * time.Hour) })
+
+if alarm.Rung() {
+	t.Fatal("the alarm rang before its time")
+}
+
+clock.Advance(100 * 24 * time.Hour) // no sleep: a hundred days, now
+
+if !alarm.Rung() {
+	t.Fatal("the alarm did not ring")
+}
+```
+
+In production the same actor is given `virtualtime.NewReal()` and nothing about it — or about its
+timers, which do not exist until they are due — changes. `go doc ./virtualtime` has the contract,
+and `go test ./virtualtime/` is the contract: the instant a timer fires, repetition, cancellation,
+the order of timers due on the same instant, time that does not go backwards, and the same scenario
+producing the same trace twice. `go test -race ./...` covers both timers.
+
 ## Implementation Details
 
 The code base is short, under 100 source lines of code as of writing, so reading the code is probably the best way to see *what* it does, but that doesn't necessarily explain *why* certain design decisions were made. To elaborate on a few things:
