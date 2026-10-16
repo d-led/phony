@@ -24,8 +24,9 @@
 //	}
 //
 // Nothing waits and nothing races: the actors run on the test's thread because
-// the clock installed a phony.Starter that hands the work to the clock instead
-// of to a goroutine, messages are processed in the order they were sent, and
+// the clock installed itself as the package's phony.Starter (phony.SwapStarter),
+// which hands an Inbox's work to the clock instead of to a goroutine, messages
+// are processed in the order they were sent, and
 // timers fire in the order they are due (in the order they were scheduled when
 // several are due at the same instant). The same test run twice does the same
 // thing twice.
@@ -67,7 +68,7 @@ type Clock struct {
 	ready     []func()
 	timers    timerHeap
 	seq       uint64
-	previous  func(func()) // the phony.Starter that was installed before this clock
+	previous  phony.Starter // the Starter that was installed before this clock
 	installed bool
 }
 
@@ -81,9 +82,9 @@ var _ Timer = (*Clock)(nil)
 // Inboxes: keep the tests that use a clock serial, or install one in TestMain.
 // The clock starts at the Unix epoch; only Advance moves it.
 func New() *Clock {
-	clock := &Clock{now: time.Unix(0, 0), previous: phony.Starter}
+	clock := &Clock{now: time.Unix(0, 0)}
 
-	phony.Starter = clock.started
+	clock.previous = phony.SwapStarter(clock.started)
 	clock.installed = true
 
 	return clock
@@ -93,7 +94,7 @@ func New() *Clock {
 // and forgets everything the clock was holding.
 func (c *Clock) Reset() {
 	if c.installed {
-		phony.Starter = c.previous
+		phony.SwapStarter(c.previous)
 		c.installed = false
 	}
 

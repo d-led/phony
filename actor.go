@@ -129,7 +129,7 @@ func (a *Inbox) advance() (more bool) {
 }
 
 func (a *Inbox) restart() {
-	Starter(a.run)
+	starters.Load().(Starter)(a.run)
 }
 
 // noCopy implements the sync.Locker interface, so go vet can catch unsafe copying

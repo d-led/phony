@@ -29,26 +29,111 @@ These are microbenchmarks, but they seem to indicate that `Actor` messaging and 
 
 An actor that takes its timers from a `virtualtime.Timer` instead of reaching for the `time`
 package can be tested without waiting for time to pass. `virtualtime.Clock` is a `Timer` whose time
-belongs to the test, and it installs a `phony.Starter` that runs the actors on the test's thread, so
-nothing happens behind the test's back:
+belongs to the test, and it installs itself as the package's `phony.Starter`, so the actors under
+test run on the test's thread and nothing happens behind the test's back. This is the whole actor,
+the same in both cases:
 
 ```go
-clock := virtualtime.New()
-defer clock.Reset()
-
-alarm := NewAlarm(clock) // the actor's timers come from a virtualtime.Timer
-clock.Block(alarm, func() { alarm.RingAfter(100 * 24 * time.Hour) })
-
-if alarm.Rung() {
-	t.Fatal("the alarm rang before its time")
+// Ticker ticks every interval until the duration it was asked for has passed.
+type Ticker struct {
+	phony.Inbox
+	timer    virtualtime.Timer
+	interval time.Duration
+	ticks    int
 }
 
-clock.Advance(100 * 24 * time.Hour) // no sleep: a hundred days, now
+func NewTicker(timer virtualtime.Timer, interval time.Duration) *Ticker {
+	return &Ticker{timer: timer, interval: interval}
+}
 
-if !alarm.Rung() {
-	t.Fatal("the alarm did not ring")
+// TickFor ticks every interval until d has passed.
+func (t *Ticker) TickFor(d time.Duration) {
+	left := int(d / t.interval)
+
+	// Declared first, because the last tick cancels it.
+	var cancel func() bool
+	cancel = t.timer.Every(t.interval, func() {
+		t.Act(nil, func() {
+			if left <= 0 {
+				cancel()
+				return
+			}
+			left--
+			t.ticks++
+		})
+	})
+}
+
+// Ticks is the count, read inside the actor: on the wall clock the actor has a
+// goroutine of its own, so the count is asked of it rather than read from it.
+func (t *Ticker) Ticks() int { return t.ticks }
+```
+
+On the wall clock, the test waits for the ticks, because there is nothing else it can do: thirty
+ticks of a hundred milliseconds are three seconds of somebody's life, and the assertion has to be a
+poll with a deadline.
+
+```go
+func TestTickingOnTheWallClockTakesThreeSeconds(t *testing.T) {
+	ticker := NewTicker(virtualtime.NewReal(), 100*time.Millisecond)
+
+	start := time.Now()
+	phony.Block(ticker, func() { ticker.TickFor(3 * time.Second) })
+
+	// There is nothing to assert yet, so wait for the ticks with a deadline.
+	deadline := time.Now().Add(6 * time.Second)
+	var ticks int
+	for {
+		phony.Block(ticker, func() { ticks = ticker.Ticks() })
+		if ticks >= 30 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	if ticks != 30 {
+		t.Fatalf("ticked %d times in three seconds, want 30", ticks)
+	}
+	t.Logf("wall clock: %d ticks in %v", ticks, time.Since(start))
 }
 ```
+
+On a clock the test owns, the same actor, the same thirty ticks and the same three seconds take no
+time, and the assertion is exact: the ticks are already there because the test decided that they
+happened.
+
+```go
+func TestTickingOnTheVirtualClockTakesNoTime(t *testing.T) {
+	clock := virtualtime.New()
+	defer clock.Reset()
+
+	ticker := NewTicker(clock, 100*time.Millisecond)
+
+	start := time.Now()
+	clock.Block(ticker, func() { ticker.TickFor(3 * time.Second) })
+	clock.Advance(3 * time.Second)
+
+	ticks := 0
+	clock.Block(ticker, func() { ticks = ticker.Ticks() })
+
+	if ticks != 30 {
+		t.Fatalf("ticked %d times in three seconds, want 30", ticks)
+	}
+	t.Logf("virtual time: %d ticks in %v", ticks, time.Since(start))
+}
+```
+
+`go test ./virtualtime/ -run Ticking -v`, on the machine this was written on:
+
+```
+--- PASS: TestTickingOnTheWallClockTakesThreeSeconds (3.00s)
+    ticker_test.go:82: wall clock: 30 ticks in 3.000694958s
+--- PASS: TestTickingOnTheVirtualClockTakesNoTime (0.00s)
+    ticker_test.go:101: virtual time: 30 ticks in 6.125µs
+```
+
+The two tests are `virtualtime/ticker_test.go`, with the interval, the duration and the count taken
+out as constants; the wall-clock one skips itself under `go test -short`.
 
 In production the same actor is given `virtualtime.NewReal()` and nothing about it — or about its
 timers, which do not exist until they are due — changes. `go doc ./virtualtime` has the contract,
