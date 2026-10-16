@@ -26,4 +26,3 @@ jobs:
           name: 'Go tests'
           path: 'go-test.json'
           reporter: golang-json
-          use-actions-summary: 'true'
