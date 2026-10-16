@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The floor go.mod declares, and whatever is current.
+          - go: '1.19.x'
+            slug: go1.19
+            label: Go 1.19
+          - go: 'stable'
+            slug: go-stable
+            label: Go stable
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+          # The library has no dependencies, and the example module replaces this
+          # one with the working copy, so there is nothing to cache.
+          cache: false
+
+      - name: Formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt wants to change:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.13.0
+
+      - name: Tests
+        run: |
+          "$(go env GOPATH)/bin/gotestsum" --format testname \
+            --junitfile junit.xml --jsonfile go-test.json \
+            -- -count=1 -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Coverage
+        if: ${{ !cancelled() }}
+        run: |
+          test -f coverage.out || exit 0
+          go tool cover -func=coverage.out | tail -1 | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: test-results-${{ matrix.slug }}
+          path: |
+            junit.xml
+            go-test.json
+            coverage.out
+          if-no-files-found: warn
+          retention-days: 14
+
+  example:
+    name: Example module
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: 'stable'
+          cache: false
+
+      - name: Tests of the example
+        working-directory: examples/virtualtime-ticking
+        run: go test -count=1 ./...
+
+      - name: The example itself
+        working-directory: examples/virtualtime-ticking
+        run: go run .

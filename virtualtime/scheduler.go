@@ -1,38 +1,3 @@
-// Package virtualtime is a clock for tests of phony actors: time is a value the
-// test advances, and the work of every actor under test happens on the thread
-// that advances it.
-//
-// A phony Inbox has no clock and never does anything on a timer: time enters
-// actor code only where the code asks for it. So an actor that wants to be
-// testable takes its timers from a Timer, and its test decides when they fire:
-//
-//	clock := virtualtime.New()
-//	defer clock.Reset()
-//
-//	alarm := NewAlarm(clock) // the actor's timers go to the test's clock
-//
-//	clock.Block(alarm, func() { alarm.RingAfter(100 * 24 * time.Hour) })
-//
-//	if alarm.Rung() {
-//		t.Fatal("the alarm rang before its time")
-//	}
-//
-//	clock.Advance(100 * 24 * time.Hour) // no sleep: a hundred days, now
-//
-//	if !alarm.Rung() {
-//		t.Fatal("the alarm did not ring")
-//	}
-//
-// Nothing waits and nothing races: the actors run on the test's thread because
-// the clock installed itself as the package's phony.Starter (phony.SwapStarter),
-// which hands an Inbox's work to the clock instead of to a goroutine, messages
-// are processed in the order they were sent, and
-// timers fire in the order they are due (in the order they were scheduled when
-// several are due at the same instant). The same test run twice does the same
-// thing twice.
-//
-// Real is the same Timer backed by wall-clock time, so the actor under test does
-// not know which of the two it was given.
 package virtualtime
 
 import (

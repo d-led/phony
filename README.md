@@ -1,5 +1,6 @@
 # Phony
 
+[![CI](https://github.com/d-led/phony/actions/workflows/ci.yml/badge.svg)](https://github.com/d-led/phony/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/d-led/phony)](https://goreportcard.com/report/github.com/d-led/phony)
 [![GoDoc](https://pkg.go.dev/badge/github.com/d-led/phony.svg)](https://pkg.go.dev/github.com/d-led/phony)
 
@@ -13,29 +14,6 @@ changed. The module path differs, so the import is:
 ```go
 import "github.com/d-led/phony"
 ```
-
-## Benchmarks
-
-```
-goos: linux
-goarch: amd64
-pkg: github.com/Arceliar/phony
-cpu: Intel(R) Core(TM) i5-10300H CPU @ 2.50GHz
-BenchmarkLoopActor-8                	38022962	        29.83 ns/op	       0 B/op	       0 allocs/op
-BenchmarkLoopChannel-8              	29876192	        38.50 ns/op	       0 B/op	       0 allocs/op
-BenchmarkSendActor-8                	14235270	        82.94 ns/op	       0 B/op	       0 allocs/op
-BenchmarkSendChannel-8              	 8372472	       143.9 ns/op	       0 B/op	       0 allocs/op
-BenchmarkRequestResponseActor-8     	10360731	       116.6 ns/op	       0 B/op	       0 allocs/op
-BenchmarkRequestResponseChannel-8   	 4226506	       285.8 ns/op	       0 B/op	       0 allocs/op
-BenchmarkBlock-8                    	 2662929	       450.9 ns/op	      32 B/op	       2 allocs/op
-PASS
-ok  	github.com/Arceliar/phony	9.463s
-```
-
-These are the original author's measurements, taken before the fork, and they are left as they
-were; the `pkg:` and `ok` lines name the module as it was then. These are microbenchmarks, but they
-seem to indicate that `Actor` messaging and goroutine+channel operations have comparable cost. I
-suspect that the difference is negligible in most applications.
 
 ## Testing actors that wait for time
 
@@ -139,29 +117,53 @@ func TestTickingOnTheVirtualClockTakesNoTime(t *testing.T) {
 
 ```
 --- PASS: TestTickingOnTheWallClockTakesThreeSeconds (3.00s)
-    ticker_test.go:82: wall clock: 30 ticks in 3.000694958s
+    ticker_test.go:83: wall clock: 30 ticks in 3.001190417s
 --- PASS: TestTickingOnTheVirtualClockTakesNoTime (0.00s)
-    ticker_test.go:101: virtual time: 30 ticks in 6.125µs
+    ticker_test.go:102: virtual time: 30 ticks in 6.667µs
 ```
 
-The two tests are `virtualtime/ticker_test.go`, with the interval, the duration and the count taken
-out as constants; the wall-clock one skips itself under `go test -short`.
+Both tests are in `virtualtime/ticker_test.go`, with the interval, the duration and the count out as
+constants; the wall-clock one skips itself under `go test -short`. The package's `Example` is the
+same actor, so `go doc ./virtualtime` leads with it.
 
 The same thing as a program that depends on this module is in
 [`examples/virtualtime-ticking`](examples/virtualtime-ticking): `cd examples/virtualtime-ticking &&
-go run .` prints
+go run .` prints, on the same machine:
 
 ```
-wall clock:   30 ticks in 3.000624833s
-virtual time: 30 ticks in 9µs
-the same 30 ticks, 3.000615833s sooner
+wall clock:   30 ticks in 3.001058792s
+virtual time: 30 ticks in 34.417µs
+the same 30 ticks, 3.001024375s sooner
 ```
 
 In production the same actor is given `virtualtime.NewReal()` and nothing about it — or about its
-timers, which do not exist until they are due — changes. `go doc ./virtualtime` has the contract,
-and `go test ./virtualtime/` is the contract: the instant a timer fires, repetition, cancellation,
-the order of timers due on the same instant, time that does not go backwards, and the same scenario
-producing the same trace twice. `go test -race ./...` covers both timers.
+timers, which do not exist until they are due — changes. `go doc ./virtualtime` describes the
+contract; `go test ./virtualtime/` is the contract: the instant a timer fires, repetition,
+cancellation, the order of timers due on the same instant, time that does not go backwards, and the
+same scenario producing the same trace twice. `go test -race ./...` covers both timers.
+
+## Benchmarks
+
+```
+goos: linux
+goarch: amd64
+pkg: github.com/Arceliar/phony
+cpu: Intel(R) Core(TM) i5-10300H CPU @ 2.50GHz
+BenchmarkLoopActor-8                	38022962	        29.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLoopChannel-8              	29876192	        38.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSendActor-8                	14235270	        82.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSendChannel-8              	 8372472	       143.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRequestResponseActor-8     	10360731	       116.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRequestResponseChannel-8   	 4226506	       285.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBlock-8                    	 2662929	       450.9 ns/op	      32 B/op	       2 allocs/op
+PASS
+ok  	github.com/Arceliar/phony	9.463s
+```
+
+These are the original author's measurements, taken before the fork, and they are left as they
+were; the `pkg:` and `ok` lines name the module as it was then. These are microbenchmarks, but they
+seem to indicate that `Actor` messaging and goroutine+channel operations have comparable cost. I
+suspect that the difference is negligible in most applications.
 
 ## Implementation Details
 

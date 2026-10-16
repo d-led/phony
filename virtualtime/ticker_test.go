@@ -1,6 +1,7 @@
 package virtualtime_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -130,4 +131,28 @@ func TestNothingRunsBehindTheTestsBack(t *testing.T) {
 	if timers, ready := clock.Pending(); timers != 1 || ready != 0 {
 		t.Fatalf("pending: %d timers, %d ready; want the one timer and nothing ready", timers, ready)
 	}
+}
+
+// Example is the example of the package documentation: thirty ticks of a hundred
+// milliseconds, for three seconds the test decides have passed. The wall-clock
+// half of the same program, which does wait, is examples/virtualtime-ticking.
+func Example() {
+	clock := virtualtime.New()
+	defer clock.Reset()
+
+	ticker := NewTicker(clock, interval)
+
+	start := clock.Now()
+	clock.Block(ticker, func() { ticker.TickFor(threeSec) })
+	clock.Advance(threeSec)
+
+	ticks := 0
+	clock.Block(ticker, func() { ticks = ticker.Ticks() })
+
+	fmt.Println("ticks:", ticks)
+	fmt.Println("the clock moved by", clock.Now().Sub(start))
+
+	// Output:
+	// ticks: 30
+	// the clock moved by 3s
 }

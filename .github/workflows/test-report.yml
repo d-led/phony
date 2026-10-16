@@ -1,0 +1,29 @@
+name: Test Report
+
+# The report is a separate workflow because a workflow triggered by a pull
+# request from a fork cannot create check runs. CI uploads the test results as an
+# artifact, and this workflow, which runs in the context of the default branch,
+# turns them into a report.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
+jobs:
+  report:
+    name: Test report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: dorny/test-reporter@v3.0.0
+        with:
+          artifact: /test-results-(.*)/
+          name: 'Tests ($1)'
+          path: 'go-test.json'
+          reporter: golang-json
+          use-actions-summary: 'true'
