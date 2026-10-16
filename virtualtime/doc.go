@@ -1,80 +1,36 @@
-// Package virtualtime is a clock for tests: time is a value the test advances, and
-// the actors under test do their work on the test's thread while it does.
+// Package virtualtime is a clock for tests: the test says how much time has
+// passed, and the actors of the test do their work on the test's thread while it
+// does.
 //
-// An actor that waits is what makes its test slow: a thirty-second timeout, a
-// retry in a minute, an alarm in a day. Give an actor its timers instead, and it is
-// the same actor in a test and in production. This is the whole actor:
+// An actor that waits for time is what makes its test slow, and a test can do
+// nothing about it — the time has to pass. Give the actor its timers instead (a
+// Timer), and the same test body runs on the wall clock and on a clock the test
+// owns, where it says the time has passed and does not wait:
 //
-//	// Ticker ticks every interval until the duration it was asked for has passed.
-//	type Ticker struct {
-//		phony.Inbox
-//		timer    virtualtime.Timer
-//		interval time.Duration
-//		ticks    int
-//	}
+//	timeIt(func() { // on the wall clock
+//		ticker := NewTicker(RealTime())
+//		ticker.TickTimesAsync(3)
+//		ticker.WaitForTicksAtLeast(3, 10*time.Second) // this waits for the ticks
+//		// a test asserts here: ticker.GetTicks() == 3
+//	})
 //
-//	// TickFor asks the ticker to tick every interval until d has passed, and
-//	// answers the channel the number of ticks arrives on.
-//	func (t *Ticker) TickFor(d time.Duration) <-chan int {
-//		ticks := make(chan int, 1)
+//	timeIt(func() { // on a clock the test owns
+//		clock := VirtualTime()
+//		defer clock.Reset()
 //
-//		t.Act(nil, func() {
-//			left := int(d / t.interval)
+//		ticker := NewTicker(clock)
+//		ticker.TickTimesAsync(3)
+//		ticker.WaitForTicksAtLeast(3, 10*time.Second) // the same, and it costs
+//		// the same assertion, and no time at all  // nothing
+//	})
 //
-//			// Declared first, because the last tick cancels it.
-//			var cancel func() bool
-//			cancel = t.timer.Every(t.interval, func() {
-//				t.Act(nil, func() {
-//					// The ticker of the wall clock may have one tick in flight
-//					// after the last one was counted.
-//					if left <= 0 {
-//						cancel()
-//						return
-//					}
+// Waiting is the one thing the two clocks do differently: on the wall clock it is
+// waiting, and on a Clock it is the step over the time that would have passed. The
+// rest follows from the clock running an Inbox's work itself instead of a
+// goroutine of its own: nothing happens behind the test's back, the timers fire in
+// the order they are due, and the same test run twice does the same thing twice.
 //
-//					left--
-//					t.ticks++
-//
-//					if left == 0 {
-//						cancel()
-//						ticks <- t.ticks
-//					}
-//				})
-//			})
-//		})
-//
-//		return ticks
-//	}
-//
-// and this is the whole test of it: three seconds that have passed by the time the
-// clock reaches the instant, with nothing to wait for and nothing to poll:
-//
-//	clock := virtualtime.New()
-//	defer clock.Reset()
-//
-//	ticker := NewTicker(clock, 100*time.Millisecond)
-//
-//	ticks := ticker.TickFor(3 * time.Second)
-//	clock.Advance(3 * time.Second)
-//
-//	if count := <-ticks; count != 30 {
-//		t.Fatalf("ticked %d times in three seconds, want 30", count)
-//	}
-//
-// In production the same actor is given NewReal() and nothing about it changes;
-// only then do the three seconds take three seconds. Example is the test above, and
-// examples/virtualtime-ticking is the same comparison as a program one can run.
-//
-// What a clock gives a test:
-//
-//   - everything due up to the instant Advance reaches has happened when it
-//     returns, so there is nothing to wait for and the assertions are exact;
-//   - the work happens on the test's thread, because the clock installed itself as
-//     the package's phony.Starter (phony.SwapStarter), which hands an Inbox's work
-//     to the clock instead of to a goroutine: no actor of the test runs while the
-//     test is not looking, and nothing races;
-//   - messages are processed in the order they were sent, and timers fire in the
-//     order they are due, in the order they were scheduled when several are due at
-//     the same instant;
-//   - the same test run twice does the same thing twice.
+// Example is the package's smallest actor: an alarm that rings in a hundred days,
+// and a test that says the hundred days have passed. examples/virtualtime-ticking
+// runs the comparison above as a program.
 package virtualtime

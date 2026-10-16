@@ -21,6 +21,12 @@ type Timer interface {
 
 	// Now answers the time the Timer is keeping.
 	Now() time.Time
+
+	// WaitFor lets up to d of this Timer's time pass, until f answers true, and
+	// answers whether it did. It is how a test that would have waited says the
+	// time has passed instead: waiting is waiting on the wall clock, and a step
+	// over the time on a Clock, so the same test body runs on either.
+	WaitFor(d time.Duration, f func() bool) bool
 }
 
 // Clock is a Timer whose time belongs to a test, and the scheduler that runs the
@@ -75,6 +81,30 @@ func (c *Clock) Now() time.Time {
 // After calls f once the clock has advanced by d.
 func (c *Clock) After(d time.Duration, f func()) func() bool {
 	return c.at(c.now.Add(d), 0, f)
+}
+
+// WaitFor lets up to d of the clock's time pass, timer by timer, until f answers
+// true, and answers whether it did.
+//
+// The timers that fall due on the way fire in order and the actors of the test
+// run, and the clock stops as soon as f is satisfied, so it never moves past what
+// was waited for.
+func (c *Clock) WaitFor(d time.Duration, f func() bool) bool {
+	deadline := c.now.Add(d)
+
+	for !f() && c.now.Before(deadline) {
+		c.Run()
+
+		next := c.peekTimer()
+		if next == nil || next.due.After(deadline) {
+			c.AdvanceTo(deadline)
+			break
+		}
+
+		c.AdvanceTo(next.due)
+	}
+
+	return f()
 }
 
 // Every calls f once the clock has advanced by interval, and every interval

@@ -1,6 +1,6 @@
-// Command virtualtime-ticking ticks for three seconds twice: once on the wall
-// clock, where the program waits for them, and once on a clock it advances itself,
-// where the same three seconds take no time at all.
+// Command virtualtime-ticking runs the same three ticks twice: on the wall clock,
+// where the three seconds have to pass, and on a clock this program owns, where
+// the same three seconds cost nothing.
 //
 // It is the ticking example of the README and of the virtualtime package, as a
 // program that depends on this module:
@@ -16,35 +16,35 @@ import (
 	"github.com/d-led/phony/virtualtime"
 )
 
-// interval is how often the ticker ticks; the two runs below tick for three
-// seconds, which is thirty of them.
-const interval = 100 * time.Millisecond
+const (
+	tickEvery = time.Second
+	three     = 3
+)
 
-// Ticker ticks every interval until the duration it was asked for has passed.
+// Ticker ticks once per tickEvery until the ticking it was asked for is over.
 type Ticker struct {
 	phony.Inbox
 	timer    virtualtime.Timer
-	interval time.Duration
 	ticks    int
+	ticked   chan int // what the actor reports when the ticking is over
+	reported int      // what the program has been told, written by the waits
 }
 
-// NewTicker answers a ticker whose timers come from timer: the wall clock in
+// NewTicker answers a ticker whose time comes from timer: the wall clock in
 // production, a virtualtime.Clock in a test.
-func NewTicker(timer virtualtime.Timer, interval time.Duration) *Ticker {
-	return &Ticker{timer: timer, interval: interval}
+func NewTicker(timer virtualtime.Timer) *Ticker {
+	return &Ticker{timer: timer, ticked: make(chan int, 1)}
 }
 
-// TickFor asks the ticker to tick every interval until d has passed, and answers
-// the channel the number of ticks arrives on.
-func (t *Ticker) TickFor(d time.Duration) <-chan int {
-	ticks := make(chan int, 1)
-
+// TickTimesAsync asks the ticker to tick n times, and does not wait for them: the
+// count arrives on the ticker's channel when the ticking is over.
+func (t *Ticker) TickTimesAsync(n int) {
 	t.Act(nil, func() {
-		left := int(d / t.interval)
+		left := n
 
 		// Declared first, because the last tick cancels it.
 		var cancel func() bool
-		cancel = t.timer.Every(t.interval, func() {
+		cancel = t.timer.Every(tickEvery, func() {
 			t.Act(nil, func() {
 				// The ticker of the wall clock may have one tick in flight after
 				// the last one was counted.
@@ -58,53 +58,85 @@ func (t *Ticker) TickFor(d time.Duration) <-chan int {
 
 				if left == 0 {
 					cancel()
-					ticks <- t.ticks
+					t.ticked <- t.ticks
 				}
 			})
 		})
 	})
-
-	return ticks
 }
 
-// run is a count of ticks and what it cost in wall-clock time.
-type run struct {
-	ticks   int
-	elapsed time.Duration
+// WaitForTicksAtLeast lets the clock pass the time until the ticker has reported
+// n ticks, giving up after at most d.
+//
+// Waiting is waiting on the wall clock, and it is the program saying that the time
+// has passed on a clock the program owns: this line is the same in both, and only
+// the clock changes. What the ticks came to is in GetTicks.
+func (t *Ticker) WaitForTicksAtLeast(n int, d time.Duration) {
+	t.timer.WaitFor(d, func() bool {
+		select {
+		case t.reported = <-t.ticked:
+		default:
+		}
+
+		return t.reported >= n
+	})
 }
 
-// onTheWallClock ticks for three seconds of real time: this one waits for them.
-func onTheWallClock() run {
-	ticker := NewTicker(virtualtime.NewReal(), interval)
+// GetTicks answers the number of ticks the ticker has reported to the program,
+// rather than letting anyone read the actor's own count: on the wall clock the
+// actor writes it on a thread of its own.
+func (t *Ticker) GetTicks() int { return t.reported }
 
+// RealTime is the wall clock: the time passes by itself, so waiting for it is
+// waiting for it.
+func RealTime() virtualtime.Timer { return virtualtime.NewReal() }
+
+// VirtualTime is a clock this program owns: the program says how much time has
+// passed, so the same wait costs nothing. Reset gives back the clock the program
+// had before; a test does that with defer.
+func VirtualTime() *virtualtime.Clock { return virtualtime.New() }
+
+// timeIt runs what it is given, and answers the number of ticks the run produced
+// and what the run cost in wall-clock time.
+func timeIt(run func() int) (int, time.Duration) {
 	start := time.Now()
-	ticks := ticker.TickFor(3 * time.Second)
-	count := <-ticks // here the three seconds pass
+	ticks := run()
 
-	return run{ticks: count, elapsed: time.Since(start)}
+	return ticks, time.Since(start)
 }
 
-// onTheClockTheTestOwns ticks for the same three seconds, which this program
-// decides have passed.
-func onTheClockTheTestOwns() run {
-	clock := virtualtime.New()
-	defer clock.Reset()
+// onTheWallClock ticks three times on the wall clock: three seconds of somebody's
+// life, which the program can do nothing about.
+func onTheWallClock() (int, time.Duration) {
+	return timeIt(func() int {
+		ticker := NewTicker(RealTime())
+		ticker.TickTimesAsync(three)
+		ticker.WaitForTicksAtLeast(three, 10*time.Second)
 
-	ticker := NewTicker(clock, interval)
+		return ticker.GetTicks()
+	})
+}
 
-	start := time.Now()
-	ticks := ticker.TickFor(3 * time.Second)
-	clock.Advance(3 * time.Second)
+// onTheClockTheProgramOwns ticks three times on a clock this program owns: the
+// same three seconds, which cost nothing, because the program says they have
+// passed.
+func onTheClockTheProgramOwns() (int, time.Duration) {
+	return timeIt(func() int {
+		clock := VirtualTime()
+		defer clock.Reset()
 
-	return run{ticks: <-ticks, elapsed: time.Since(start)}
+		ticker := NewTicker(clock)
+		ticker.TickTimesAsync(three)
+		ticker.WaitForTicksAtLeast(three, 10*time.Second)
+
+		return ticker.GetTicks()
+	})
 }
 
 func main() {
-	waited := onTheWallClock()
-	advanced := onTheClockTheTestOwns()
+	realTicks, realCost := onTheWallClock()
+	virtualTicks, virtualCost := onTheClockTheProgramOwns()
 
-	fmt.Printf("wall clock:   %d ticks in %v\n", waited.ticks, waited.elapsed)
-	fmt.Printf("virtual time: %d ticks in %v\n", advanced.ticks, advanced.elapsed)
-	fmt.Printf("the same %d ticks, %v sooner\n", advanced.ticks,
-		waited.elapsed-advanced.elapsed)
+	fmt.Printf("real time:    %d ticks in %v\n", realTicks, realCost)
+	fmt.Printf("virtual time: %d ticks in %v\n", virtualTicks, virtualCost)
 }

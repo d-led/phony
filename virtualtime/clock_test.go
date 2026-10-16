@@ -174,6 +174,43 @@ func TestPendingAnswersWhatIsStillToCome(t *testing.T) {
 	}
 }
 
+func TestWaitingLetsTheTimePassTimerByTimer(t *testing.T) {
+	clock := virtualtime.New()
+	defer clock.Reset()
+
+	start := clock.Now()
+	ticks := 0
+	cancel := clock.Every(time.Second, func() { ticks++ })
+
+	waited := clock.WaitFor(10*time.Second, func() bool { return ticks >= 3 })
+	cancel()
+
+	if !waited {
+		t.Fatal("waiting for three ticks answered false")
+	}
+	if ticks != 3 {
+		t.Fatalf("the time passed %d ticks, want the three that were waited for", ticks)
+	}
+	if moved := clock.Now().Sub(start); moved != 3*time.Second {
+		t.Fatalf("the clock stopped at %v, want 3s: a wait does not overshoot", moved)
+	}
+}
+
+func TestWaitingGivesUpWhenTheTimeRunsOut(t *testing.T) {
+	clock := virtualtime.New()
+	defer clock.Reset()
+
+	start := clock.Now()
+	never := func() bool { return false }
+
+	if clock.WaitFor(time.Minute, never) {
+		t.Fatal("waiting for something that never happens answered true")
+	}
+	if moved := clock.Now().Sub(start); moved != time.Minute {
+		t.Fatalf("the clock stopped at %v, want the whole minute", moved)
+	}
+}
+
 // The scenario of the package's own documentation, with an actor of each kind on
 // one clock: the run is the same every time, which is what installing the
 // Starter seam buys over the default goroutine per inbox.

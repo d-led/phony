@@ -65,3 +65,20 @@ func (r *Real) Every(interval time.Duration, f func()) func() bool {
 func (r *Real) Now() time.Time {
 	return time.Now()
 }
+
+// WaitFor waits up to d of wall-clock time for f to answer true, and answers
+// whether it did. This is the wall clock's half of the trade the Clock makes: a
+// test that waits with one waits with the other, and only the clock changes.
+func (r *Real) WaitFor(d time.Duration, f func() bool) bool {
+	deadline := time.Now().Add(d)
+
+	for !f() {
+		if time.Now().After(deadline) {
+			return false
+		}
+
+		time.Sleep(time.Millisecond)
+	}
+
+	return true
+}

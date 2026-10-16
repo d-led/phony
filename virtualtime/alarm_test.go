@@ -1,6 +1,7 @@
 package virtualtime_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -55,4 +56,23 @@ func TestWhyWait(t *testing.T) {
 	if at := <-rang; !at.Equal(clock.Now()) {
 		t.Fatalf("the alarm rang at %v, want %v", at, clock.Now())
 	}
+}
+
+// Example is the package's smallest actor — an alarm that rings once, later — and
+// the hundred days that pass in the time it takes to read this. The same alarm in
+// production is given NewReal(), and really waits for them.
+func Example() {
+	clock := virtualtime.New()
+	defer clock.Reset()
+
+	alarm := NewAlarm(clock)
+
+	start := clock.Now()
+	rang := alarm.RingAfter(100 * 24 * time.Hour)
+	clock.Advance(100 * 24 * time.Hour)
+
+	fmt.Println("rang after", (<-rang).Sub(start))
+
+	// Output:
+	// rang after 2400h0m0s
 }

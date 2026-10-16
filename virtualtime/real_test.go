@@ -77,3 +77,23 @@ func TestTheRealRepeatingTimerNeedsAPositiveInterval(t *testing.T) {
 
 	mustPanic(t, func() { wall.Every(0, func() {}) })
 }
+
+// Waiting on the wall clock means waiting: it stops as soon as what is waited for
+// has happened, and gives up when the time it was given runs out.
+func TestTheRealTimerWaitsForWhatItIsWaitingFor(t *testing.T) {
+	wall := virtualtime.NewReal()
+	start := time.Now()
+	longEnough := func() bool { return time.Since(start) >= 20*time.Millisecond }
+
+	if !wall.WaitFor(time.Second, longEnough) {
+		t.Fatal("waiting for twenty milliseconds answered false")
+	}
+	if waited := time.Since(start); waited < 20*time.Millisecond {
+		t.Fatalf("waited %v, want at least the 20ms it was waiting for", waited)
+	}
+
+	never := func() bool { return false }
+	if wall.WaitFor(20*time.Millisecond, never) {
+		t.Fatal("waiting for something that never happens answered true")
+	}
+}
