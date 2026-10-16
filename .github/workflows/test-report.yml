@@ -26,3 +26,7 @@ jobs:
           name: 'Go tests'
           path: 'go-test.json'
           reporter: golang-json
+          # The action writes either an Actions summary or a check run, and the
+          # check run is the one that shows up under Checks for the commit and
+          # annotates the failures.
+          use-actions-summary: 'false'
