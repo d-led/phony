@@ -1,9 +1,18 @@
 # Phony
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/Arceliar/phony)](https://goreportcard.com/report/github.com/Arceliar/phony)
-[![GoDoc](https://godoc.org/github.com/Arceliar/phony?status.svg)](https://godoc.org/github.com/Arceliar/phony)
+[![Go Report Card](https://goreportcard.com/badge/github.com/d-led/phony)](https://goreportcard.com/report/github.com/d-led/phony)
+[![GoDoc](https://pkg.go.dev/badge/github.com/d-led/phony.svg)](https://pkg.go.dev/github.com/d-led/phony)
 
 Phony is a [Pony](https://ponylang.io/)-inspired proof-of-concept implementation of shared-memory actor-model concurrency in the Go programming language. `Actor`s automatically manage goroutines and use asynchronous causal messaging (with backpressure) for communcation. This makes it easy to write programs that are free from deadlocks, goroutine leaks, and many of the `for` loops over `select` statements that show up in boilerplate code. The down side is that the code needs to be written in an asynchronous style, which is not idiomatic to Go, so it can take some getting used to.
+
+This is the `d-led` fork of [Arceliar/phony](https://github.com/Arceliar/phony), which is no
+longer developed. The fork is the same library, with one seam and one package added so that actors
+can be tested without waiting for time (`phony.SwapStarter` and `virtualtime`, below); nothing else
+changed. The module path differs, so the import is:
+
+```go
+import "github.com/d-led/phony"
+```
 
 ## Benchmarks
 
@@ -23,7 +32,10 @@ PASS
 ok  	github.com/Arceliar/phony	9.463s
 ```
 
-These are microbenchmarks, but they seem to indicate that `Actor` messaging and goroutine+channel operations have comparable cost. I suspect that the difference is negligible in most applications.
+These are the original author's measurements, taken before the fork, and they are left as they
+were; the `pkg:` and `ok` lines name the module as it was then. These are microbenchmarks, but they
+seem to indicate that `Actor` messaging and goroutine+channel operations have comparable cost. I
+suspect that the difference is negligible in most applications.
 
 ## Testing actors that wait for time
 

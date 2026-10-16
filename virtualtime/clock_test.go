@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Arceliar/phony"
-	"github.com/Arceliar/phony/virtualtime"
+	"github.com/d-led/phony"
+	"github.com/d-led/phony/virtualtime"
 )
 
 // The contract of the clock itself, without actors in the way.

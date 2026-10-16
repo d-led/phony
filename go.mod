@@ -1,3 +1,3 @@
-module github.com/Arceliar/phony
+module github.com/d-led/phony
 
 go 1.19

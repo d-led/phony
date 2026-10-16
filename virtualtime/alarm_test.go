@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Arceliar/phony"
-	"github.com/Arceliar/phony/virtualtime"
+	"github.com/d-led/phony"
+	"github.com/d-led/phony/virtualtime"
 )
 
 // Alarm is the smallest actor that waits for time: it rings once, later.

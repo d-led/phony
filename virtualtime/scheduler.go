@@ -39,7 +39,7 @@ import (
 	"container/heap"
 	"time"
 
-	"github.com/Arceliar/phony"
+	"github.com/d-led/phony"
 )
 
 // Timer is what an actor needs in order to be testable: somewhere to ask for

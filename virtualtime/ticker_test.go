@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Arceliar/phony"
-	"github.com/Arceliar/phony/virtualtime"
+	"github.com/d-led/phony"
+	"github.com/d-led/phony/virtualtime"
 )
 
 // This file is the "show me the code" section of the README: the actor, and the

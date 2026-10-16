@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Arceliar/phony/virtualtime"
+	"github.com/d-led/phony/virtualtime"
 )
 
 // An actor written against a Timer does not know which one it was given, so the

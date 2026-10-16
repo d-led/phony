@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/Arceliar/phony"
+	"github.com/d-led/phony"
 )
 
 // Structs can embed the Inbox type to fulfill the Actor interface.
