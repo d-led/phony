@@ -147,6 +147,16 @@ func TestTickingOnTheVirtualClockTakesNoTime(t *testing.T) {
 The two tests are `virtualtime/ticker_test.go`, with the interval, the duration and the count taken
 out as constants; the wall-clock one skips itself under `go test -short`.
 
+The same thing as a program that depends on this module is in
+[`examples/virtualtime-ticking`](examples/virtualtime-ticking): `cd examples/virtualtime-ticking &&
+go run .` prints
+
+```
+wall clock:   30 ticks in 3.000624833s
+virtual time: 30 ticks in 9µs
+the same 30 ticks, 3.000615833s sooner
+```
+
 In production the same actor is given `virtualtime.NewReal()` and nothing about it — or about its
 timers, which do not exist until they are due — changes. `go doc ./virtualtime` has the contract,
 and `go test ./virtualtime/` is the contract: the instant a timer fires, repetition, cancellation,
