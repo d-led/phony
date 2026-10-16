@@ -7,21 +7,23 @@
 // Timer), and the same test body runs on the wall clock and on a clock the test
 // owns, where it says the time has passed and does not wait:
 //
-//	timeIt(func() { // on the wall clock
+//	timeIt(func() int { // on the wall clock
 //		ticker := NewTicker(RealTime())
 //		ticker.TickTimesAsync(3)
-//		ticker.WaitForTicksAtLeast(3, 10*time.Second) // this waits for the ticks
-//		// a test asserts here: ticker.GetTicks() == 3
+//		ticker.WaitForTicksAtLeast(3, 10*time.Second)
+//
+//		return ticker.GetTicks()
 //	})
 //
-//	timeIt(func() { // on a clock the test owns
+//	timeIt(func() int { // on a clock the test owns
 //		clock := VirtualTime()
 //		defer clock.Reset()
 //
 //		ticker := NewTicker(clock)
 //		ticker.TickTimesAsync(3)
-//		ticker.WaitForTicksAtLeast(3, 10*time.Second) // the same, and it costs
-//		// the same assertion, and no time at all  // nothing
+//		ticker.WaitForTicksAtLeast(3, 10*time.Second)
+//
+//		return ticker.GetTicks()
 //	})
 //
 // Waiting is the one thing the two clocks do differently: on the wall clock it is
