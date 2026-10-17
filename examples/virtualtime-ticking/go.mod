@@ -2,7 +2,7 @@ module github.com/d-led/phony/examples/virtualtime-ticking
 
 go 1.19
 
-require github.com/d-led/phony v0.0.3
+require github.com/d-led/phony v0.0.5
 
 require go.uber.org/goleak v1.2.1
 
